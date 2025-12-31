@@ -80,6 +80,7 @@
             border-radius: 4px;
             transition: background 0.2s;
             cursor: pointer;
+            min-height: 30px;
         }
 
         .cell:active { background: rgba(255, 255, 255, 0.1); }
@@ -95,20 +96,6 @@
 
         .x-path { stroke: var(--x-color); filter: drop-shadow(0 0 5px var(--x-color)); }
         .o-path { stroke: var(--o-color); filter: drop-shadow(0 0 5px var(--o-color)); }
-
-        .block-cell { background: rgba(250, 204, 21, 0.1); }
-        .block-icon {
-            width: 50%;
-            height: 50%;
-            stroke: var(--block-color);
-            opacity: 0.8;
-            animation: pulse-block 2s infinite;
-        }
-
-        @keyframes pulse-block {
-            0%, 100% { opacity: 0.4; transform: scale(0.9); }
-            50% { opacity: 1; transform: scale(1.1); }
-        }
 
         .win-line-overlay {
             position: absolute;
@@ -141,6 +128,8 @@
 
         .hidden-info { opacity: 0; pointer-events: none; transform: translateY(10px); transition: all 0.4s; }
         .show-info { opacity: 1; pointer-events: auto; transform: translateY(0); }
+        
+        #controls-admin { display: none; }
     </style>
 </head>
 <body>
@@ -158,21 +147,23 @@
         </div>
     </div>
 
+    <div id="role-info" class="text-[10px] text-cyan-400 mb-2 orbitron">MENGHUBUNGKAN...</div>
+
     <div class="board-container">
         <div id="grid" class="space-grid"></div>
         <div id="win-line" class="win-line-overlay" style="display:none"></div>
     </div>
 
-    <div class="p-6 text-[10px] text-slate-500 orbitron tracking-widest uppercase">
-        Sektor 11x11 — Sesi Aman (Persisten)
+    <!-- Admin Panel -->
+    <div id="controls-admin" class="fixed bottom-6 flex flex-col gap-2 items-center">
+        <button onclick="window.resetGame()" class="bg-gray-800 text-white px-4 py-2 rounded-full text-[10px] orbitron border border-gray-600">
+            FORCE START / RESET
+        </button>
+        <button onclick="window.triggerPrank()" class="bg-red-600 text-white px-8 py-3 rounded-full font-bold text-sm shadow-xl hover:bg-red-700 active:scale-95 transition-all orbitron">
+            ⚠ AKTIFKAN ANOMALI
+        </button>
     </div>
 
-    <!-- Tombol Khusus Admin -->
-    <button id="prankBtn" onclick="window.triggerPrank()" class="hidden fixed bottom-6 right-6 bg-red-600 text-white px-6 py-3 rounded-full font-bold text-sm shadow-xl z-50 hover:bg-red-700 active:scale-95 transition-all">
-        ⚠ AKTIFKAN ANOMALI
-    </button>
-
-    <!-- JUMPSCARE OVERLAY -->
     <div id="jumpscareOverlay" style="position:fixed; inset:0; background:black; display:none; z-index:9999;">
         <video id="jumpscareVideo" src="assets/video/jumpscare.mp4" style="width:100%; height:100%; object-fit:cover" playsinline preload="auto"></video>
     </div>
@@ -208,7 +199,6 @@
 
         const xSvg = `<svg class="icon-svg x-path" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12" stroke-width="2.5" stroke-linecap="round"/></svg>`;
         const oSvg = `<svg class="icon-svg o-path" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" stroke-width="2.5"/></svg>`;
-        const blockSvg = `<svg class="block-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="5" y="5" width="14" height="14" rx="3" stroke-width="2"/><path d="M9 9l6 6M15 9l-6 6"/></svg>`;
 
         const gridEl = document.getElementById('grid');
         const chipX = document.getElementById('chip-x');
@@ -216,16 +206,15 @@
         const winLineEl = document.getElementById('win-line');
         const winMsg = document.getElementById('win-message');
         const winText = document.getElementById('win-text');
-        const prankBtn = document.getElementById('prankBtn');
+        const roleInfo = document.getElementById('role-info');
+        const adminPanel = document.getElementById('controls-admin');
         const jumpscareOverlay = document.getElementById('jumpscareOverlay');
         const jumpscareVideo = document.getElementById('jumpscareVideo');
 
         onAuthStateChanged(auth, user => {
             if (user) {
                 myUid = user.uid;
-                if (myUid === ADMIN_UID) {
-                    prankBtn.classList.remove('hidden');
-                }
+                if (myUid === ADMIN_UID) adminPanel.style.display = 'flex';
                 joinRoom();
             } else {
                 signInAnonymously(auth);
@@ -238,7 +227,7 @@
                 await setDoc(roomRef, {
                     board: Array(GRID_SIZE * GRID_SIZE).fill(null),
                     turn: "X",
-                    status: "playing",
+                    status: "playing", 
                     players: { X: myUid, O: null },
                     jumpscare: { active: false, ts: 0 }
                 });
@@ -248,10 +237,20 @@
                 const data = docSnap.data();
                 if (!data) return;
 
-                if (data.players.X === myUid) mySymbol = "X";
-                else if (data.players.O === myUid) mySymbol = "O";
-                else if (!data.players.O) {
-                    updateDoc(roomRef, { "players.O": myUid });
+                // Dinamis Role Assignment
+                if (data.players.X === myUid) {
+                    mySymbol = "X";
+                    roleInfo.textContent = "LOGIN: PILOT X (HOST)";
+                } else if (data.players.O === myUid) {
+                    mySymbol = "O";
+                    roleInfo.textContent = "LOGIN: PILOT O (VISITOR)";
+                } else if (!data.players.O) {
+                    updateDoc(roomRef, { "players.O": myUid, status: "playing" });
+                    mySymbol = "O";
+                    roleInfo.textContent = "LOGIN: PILOT O";
+                } else {
+                    roleInfo.textContent = "LOGIN: SPECTATOR";
+                    mySymbol = null;
                 }
 
                 board = data.board;
@@ -289,18 +288,15 @@
                 const cell = gridEl.children[i];
                 if (val === "X") cell.innerHTML = xSvg;
                 else if (val === "O") cell.innerHTML = oSvg;
-                else if (val === "BLOCK") {
-                    cell.innerHTML = blockSvg;
-                    cell.classList.add('block-cell');
-                } else {
+                else {
                     cell.innerHTML = "";
-                    cell.classList.remove('block-cell', 'win-glow');
+                    cell.classList.remove('win-glow');
                 }
             });
         }
 
         async function handleMove(index) {
-            if (!gameActive || board[index] || currentPlayer !== mySymbol) return;
+            if (!gameActive || board[index] || !mySymbol || currentPlayer !== mySymbol) return;
             const newBoard = [...board];
             newBoard[index] = mySymbol;
             await updateDoc(roomRef, { board: newBoard, turn: mySymbol === "X" ? "O" : "X" });
@@ -318,7 +314,7 @@
 
         function checkWinGlobal() {
             for (let i = 0; i < board.length; i++) {
-                if (board[i] && board[i] !== 'BLOCK') {
+                if (board[i]) {
                     const win = checkWinFromIdx(i);
                     if (win) return win;
                 }
