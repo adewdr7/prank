@@ -188,12 +188,127 @@
     </div>
 
     <div class="p-6 text-[10px] text-slate-500 orbitron tracking-widest uppercase">
+<button id="prankBtn"
+        onclick="triggerPrank()"
+        class="hidden fixed bottom-6 right-6 bg-red-600 text-white px-4 py-2 rounded-full font-bold text-xs shadow-lg">
+  ⚠ PRANK
+</button>
         Sektor 11x11 — Anomali Terdeteksi
     </div>
 
-    <script>
-        const GRID_SIZE = 11;
-        let board = Array(GRID_SIZE * GRID_SIZE).fill(null);
+    <script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+import {
+  getFirestore, doc, getDoc, setDoc, updateDoc, onSnapshot
+} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyD9ce1o3p2UJgm5g97vS4UX8zFZZKoru_s",
+  authDomain: "prank-1d526.firebaseapp.com",
+  projectId: "prank-1d526",
+  storageBucket: "prank-1d526.firebasestorage.app",
+  messagingSenderId: "213885387784",
+  appId: "1:213885387784:web:839dcdb9750efc35d4fdbd"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const auth = getAuth(app);
+
+const GRID_SIZE = 11;
+let board = Array(GRID_SIZE * GRID_SIZE).fill(null);
+let myUid = null; 
+
+
+signInAnonymously(auth);
+
+onAuthStateChanged(auth, user => {
+  if (user) {
+    myUid = user.uid;
+    console.log("MY UID:", myUid);
+
+    joinRoom(); // ✅ AMAN
+  }
+});
+
+const roomId = "room-demo"; // nanti bisa random / input
+const roomRef = doc(db, "rooms", roomId);
+
+let mySymbol = null;
+
+// === PRANK CONFIG ===
+const ADMIN_UID = "ISI_UID_KAMU_DI_SINI"; // 🔥 WAJIB
+
+async function joinRoom() {
+  const snap = await getDoc(roomRef);
+
+  // 1️⃣ BUAT ROOM JIKA BELUM ADA
+  if (!snap.exists()) {
+    await setDoc(roomRef, {
+      board: Array(GRID_SIZE * GRID_SIZE).fill(null),
+      turn: "X",
+      status: "waiting",
+      players: {
+        X: myUid,
+        O: null
+      },
+      jumpscare: {
+        active: false,
+        by: null,
+        ts: null
+      }
+    });
+  }
+
+  // 2️⃣ LISTEN REALTIME (SATU-SATUNYA SUMBER GAME)
+  onSnapshot(roomRef, snap => {
+    const data = snap.data();
+    if (!data) return;
+
+    // assign symbol
+    if (data.players.X === myUid) mySymbol = "X";
+    else if (data.players.O === myUid) mySymbol = "O";
+
+    // auto join jadi O
+    if (!data.players.O && data.players.X !== myUid) {
+      updateDoc(roomRef, {
+        "players.O": myUid,
+        status: "playing"
+      });
+    }
+
+    // sync state
+    board = data.board;
+    currentPlayer = data.turn;
+    gameActive = data.status === "playing";
+
+    renderBoardFromFirebase();
+    updateUI();
+  });
+}
+
+    // assign symbol
+    if (data.players.X === myUid) mySymbol = "X";
+    else if (data.players.O === myUid) mySymbol = "O";
+
+    // 3️⃣ JIKA PLAYER O KOSONG & AKU BUKAN X → JADI O
+    if (!data.players.O && data.players.X !== myUid) {
+      updateDoc(roomRef, {
+        "players.O": myUid,
+        status: "playing"
+      });
+    }
+
+    // 4️⃣ RENDER DARI FIREBASE
+    board = data.board;
+    currentPlayer = data.turn;
+    gameActive = data.status === "playing";
+
+    renderBoardFromFirebase();
+    updateUI();
+  });
+}
         let currentPlayer = 'X';
         let gameActive = true;
 
@@ -252,25 +367,28 @@
             }
         }
 
-        function handleMove(index) {
-            if (!gameActive || board[index]) return;
+        async function handleMove(index) {
+  if (!gameActive) return;
+  if (currentPlayer !== mySymbol) return;
+  if (board[index]) return;
 
-            board[index] = currentPlayer;
-            const cell = gridEl.children[index];
-            cell.innerHTML = currentPlayer === 'X' ? xSvg : oSvg;
+  const newBoard = [...board];
+  newBoard[index] = mySymbol;
 
-            const win = checkWin(index);
-            if (win) {
-                gameActive = false;
-                drawWinLine(win);
-                showWin(currentPlayer);
-                return;
-            }
+  await updateDoc(roomRef, {
+    board: newBoard,
+    turn: mySymbol === "X" ? "O" : "X"
+  });
+}
 
-            processAnomalies();
-            currentPlayer = currentPlayer === 'X' ? 'O' : 'X';
-            updateUI();
-        }
+function renderBoardFromFirebase() {
+  board.forEach((v, i) => {
+    const cell = gridEl.children[i];
+    if (v === "X") cell.innerHTML = xSvg;
+    else if (v === "O") cell.innerHTML = oSvg;
+    else cell.innerHTML = "";
+  });
+}
 
         function processAnomalies() {
             // Chance to add a block
@@ -310,6 +428,16 @@
             }
             return false;
         }
+
+window.triggerPrank = async () => {
+  if (myUid !== ADMIN_UID) return;
+
+  await updateDoc(roomRef, {
+    "jumpscare.active": true,
+    "jumpscare.by": myUid,
+    "jumpscare.ts": Date.now()
+  });
+};
 
         function checkWin(idx) {
             const p = board[idx];
@@ -377,21 +505,40 @@
             winMsg.classList.add('show-info');
         }
 
-        function resetGame() {
-            board = Array(GRID_SIZE * GRID_SIZE).fill(null);
-            gameActive = true;
-            currentPlayer = 'X';
-            winLineEl.style.display = 'none';
-            winMsg.classList.remove('show-info');
-            initGrid();
-            updateUI();
-        }
+        async function resetGame() {
+  await updateDoc(roomRef, {
+    board: Array(GRID_SIZE * GRID_SIZE).fill(null),
+    turn: "X",
+    status: "playing"
+  });
+
+  winLineEl.style.display = 'none';
+  winMsg.classList.remove('show-info');
+}
 
         window.onload = () => {
-            createStars();
-            initGrid();
-        };
+  createStars();
+  // initGrid(); // ❌ DIMATIKAN (ONLINE MODE)
+};
+
     </script>
+<!-- JUMPSCARE OVERLAY -->
+<div id="jumpscareOverlay"
+     style="
+       position:fixed;
+       inset:0;
+       background:black;
+       display:none;
+       z-index:9999;
+     ">
+  <video id="jumpscareVideo"
+         src="assets/video/jumpscare.mp4"
+         style="width:100%;height:100%;object-fit:cover"
+         playsinline
+         preload="auto">
+  </video>
+</div>
 </body>
 </html>
+
 
