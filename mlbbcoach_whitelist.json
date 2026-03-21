@@ -1,7 +1,9 @@
 {
   "enabled": true,
-  "allowed": [
-    "07b60325fb358a6e",
-    "3c56c8c304a1f5ec"
-  ]
+  "keys": {
+    "YV85NzQg6dYxl5D8": {
+      "max_users": 1,
+      "expires_at": "2026-03-24"
+    }
+  }
 }
