@@ -1,6 +1,6 @@
 {
-  "adaKlienAktif": false,
-  "slotFilled": 0,
+  "adaKlienAktif": true,
+  "slotFilled": 1,
   "slotTotal": 2,
-  "deadline": null
+  "deadline": "2026-07-23T12:44:00.000Z"
 }
